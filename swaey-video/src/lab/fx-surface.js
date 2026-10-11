@@ -45,13 +45,13 @@
     const th = FX.thermalImage(root, 1920, 1080, { src: "assets/wp/sonoma.jpg" });
     const btn = E.h("div", "", root, "Show what left my Mac");
     E.css(btn, { position: "absolute", left: "820px", top: "500px", padding: "12px 20px", borderRadius: "10px", background: "rgba(20,20,22,.92)", color: "#fff", font: "500 22px/1 var(--sf)", letterSpacing: "-.01em" });
-    const gt = FX.glitchTiles(root, 1920, 1080, { geom: th.geom, region: { x: 760, y: 440, w: 400, h: 170 } });
+    const gt = FX.glitchTiles(root, 1920, 1080, { geom: th.geom, region: { x: 820, y: 500, w: 280, h: 46 } });
     return (lt) => {
       const mix = E.k(lt, 0.15, 0.6, E.ease.inOutCubic);
       const g = E.k(lt, 1.7, 1.2, E.ease.inCubic);
       th.render(lt, { mix, zoom: 1.04 + lt * 0.03, flow: 1, glitch: g, grid: E.k(lt, 1.6, 1.1, E.ease.outCubic) });
       gt.render(lt, g, { geom: th.geom });
-      E.op(btn, 1 - E.k(lt, 2.3, 0.3));
+      E.op(btn, 1 - E.k(lt, 2.5, 0.2));
     };
   });
   /* 8.5–9.5  sunset + applyThermal on a DOM card (left plain, right thermal) */

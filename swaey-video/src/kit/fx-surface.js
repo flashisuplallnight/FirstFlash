@@ -47,7 +47,6 @@
   .fxs-tag { display: flex; align-items: center; justify-content: center; gap: 9px; height: 100%; background: #0d0d0d; color: #fff; font: 400 17px/1 var(--sf-mono); letter-spacing: .02em; white-space: nowrap; }
   .fxs-code { font: 400 8.6px/1.62 var(--sf-mono); white-space: pre; color: #d8d8d8; }
   .fxs-sun { position: absolute; background: var(--sunset); overflow: hidden; }
-  .fxs-sun-g { position: absolute; inset: 0; }
   .fxs-shield path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
   `);
 
@@ -69,6 +68,16 @@
     const gl = GLX.c.getContext("webgl", { preserveDrawingBuffer: true, premultipliedAlpha: true, alpha: true, antialias: false, depth: false, stencil: false });
     if (!gl) { GLX.dead = true; console.warn("fx-surface: no WebGL"); return null; }
     GLX.gl = gl;
+    // survive a context loss (Chrome drops the oldest context past ~16): rebuild programs/buffers/textures on restore
+    GLX.c.addEventListener("webglcontextlost", (e) => { e.preventDefault(); GLX.lost = true; });
+    GLX.c.addEventListener("webglcontextrestored", () => {
+      GLX.lost = false; GLX.progs = new Map();
+      GLX.deriv = !!gl.getExtension("OES_standard_derivatives");
+      GLX.buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, GLX.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      for (const r of GLX.restore) r();
+    });
+    GLX.restore = [];
     GLX.deriv = !!gl.getExtension("OES_standard_derivatives");
     GLX.buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, GLX.buf);
@@ -109,7 +118,7 @@
   /* render `frag` at cw×ch into the shared buffer, then copy it into ctx (a 2D context of the same size) */
   function glDraw(ctx, cw, ch, frag, t, uni = {}, tex = null) {
     const gl = GLX.gl;
-    if (!gl) { ctx.fillStyle = "#ede8e3"; ctx.fillRect(0, 0, cw, ch); return; }
+    if (!gl || GLX.lost) { ctx.fillStyle = "#ede8e3"; ctx.fillRect(0, 0, cw, ch); return; }
     const P = glProg(frag);
     gl.viewport(0, 0, cw, ch);
     gl.useProgram(P.pr);
@@ -137,30 +146,50 @@
     ctx.drawImage(GLX.c, 0, GLX.h - ch, cw, ch, 0, 0, cw, ch);
     ctx.globalCompositeOperation = "source-over";
   }
-  /* image → mipmapped POT texture (loaded before the first frame via E.ready) */
+  /* image → mipmapped POT textures (loaded before the first frame via E.ready):
+     rec.tex = the photo (RGB), rec.lum = packed luminance (R = luma, G = luma blurred ~1.5% of the width),
+     so the thermal map needs a single fetch per pixel. */
   const TEX = new Map();
+  function upload(gl, canvas, wrap) {
+    const tx = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tx);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+    return tx;
+  }
   function glTexture(src) {
     if (TEX.has(src)) return TEX.get(src);
-    const rec = { tex: null, aspect: 16 / 9, img: new Image() };
+    const rec = { tex: null, lum: null, aspect: 16 / 9, img: new Image() };
     rec.ready = new Promise((res) => {
       rec.img.onload = () => {
         const gl = glInit();
         rec.aspect = rec.img.naturalWidth / rec.img.naturalHeight;
         if (gl) {
-          const pc = document.createElement("canvas");
-          pc.width = 2048; pc.height = 1024;
-          pc.getContext("2d").drawImage(rec.img, 0, 0, 2048, 1024);
-          const tx = gl.createTexture();
-          gl.bindTexture(gl.TEXTURE_2D, tx);
-          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pc);
-          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-          gl.generateMipmap(gl.TEXTURE_2D);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
-          rec.tex = tx;
+          const TW = 1024, TH = 512;
+          const pc = document.createElement("canvas"); pc.width = TW; pc.height = TH;
+          const px = pc.getContext("2d");
+          px.drawImage(rec.img, 0, 0, TW, TH);
+          const photo = document.createElement("canvas"); photo.width = TW; photo.height = TH;
+          photo.getContext("2d").drawImage(pc, 0, 0);
+          rec.tex = upload(gl, photo, gl.MIRRORED_REPEAT);
+          // luminance + blurred luminance
+          const bl = document.createElement("canvas"); bl.width = TW; bl.height = TH;
+          const bx = bl.getContext("2d"); bx.filter = "blur(14px)"; bx.drawImage(pc, 0, 0);
+          const a = px.getImageData(0, 0, TW, TH), b = bx.getImageData(0, 0, TW, TH);
+          for (let i = 0; i < a.data.length; i += 4) {
+            const L = 0.2126 * a.data[i] + 0.7152 * a.data[i + 1] + 0.0722 * a.data[i + 2];
+            const Lb = 0.2126 * b.data[i] + 0.7152 * b.data[i + 1] + 0.0722 * b.data[i + 2];
+            a.data[i] = L; a.data[i + 1] = Lb; a.data[i + 2] = 0; a.data[i + 3] = 255;
+          }
+          px.putImageData(a, 0, 0);
+          rec.lum = upload(gl, pc, gl.MIRRORED_REPEAT);
+          GLX.restore.push(() => { rec.tex = upload(gl, photo, gl.MIRRORED_REPEAT); rec.lum = upload(gl, pc, gl.MIRRORED_REPEAT); });
         }
         res();
       };
@@ -185,16 +214,22 @@
     hexes.forEach((h, i) => g.addColorStop(i / n, h));
     if (cyclic) g.addColorStop(1, hexes[0]);
     x.fillStyle = g; x.fillRect(0, 0, 256, 1);
-    const tx = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tx);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, cyclic ? gl.REPEAT : gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    RAMPTEX.set(k, tx);
-    return tx;
+    const rec = { tex: null };
+    const make = () => {
+      const tx = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, cyclic ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      rec.tex = tx;
+    };
+    make();
+    GLX.restore.push(make);
+    RAMPTEX.set(k, rec);
+    return rec;
   }
   /* a 2D canvas showing a shader at `scale` resolution, CSS-sized to w×h */
   function glLayer(parent, w, h, scale, cls = "fxs-cv") {
@@ -205,6 +240,7 @@
     return { c, ctx: c.getContext("2d") };
   }
   FX._gl = GLX;
+  FX._dbg = { glDraw, glTexture, glRamp, glLayer };
 
   /* Drop-in for E.C.Shader (same frag conventions: uRes, uT; plus h21/vnoise/fbm/hx helpers),
      rendered through the shared context: new-context-free. */
@@ -305,8 +341,9 @@
     col += (h21(gl_FragCoord.xy + fract(uT)*91.) - 0.5)/255.*2.;   // dither
     float a = uAlpha;
     if (uCover < 0.999) {
-      float c = mix(-0.6, 1.25, uCover) - 0.45*length((uv - uFrom)*vec2(ar*0.7, 1.)) + (v - 0.5)*1.1;
-      a *= smoothstep(0.0, 0.22, c);
+      // flood: blobs nearest uFrom (and the field peaks) fill first; spread evenly over cover 0..1
+      float c = uCover*1.915 - 0.657 - 0.45*min(length((uv - uFrom)*vec2(ar*0.7, 1.)), 1.) + (v - 0.47)*2.6;
+      a *= smoothstep(0.0, 0.18, c);
     }
     gl_FragColor = vec4(col*a, a);
   }`;
@@ -550,8 +587,9 @@
   };
 
   const FRAG_THERMAL = `
-  uniform sampler2D uTex;
+  uniform sampler2D uTex;             // packed luminance: r = L, g = blurred L
   uniform sampler2D uTex1;            // gradient-map ramp (256×1)
+  uniform sampler2D uTex2;            // the photo itself (only read while mix < 1)
   uniform float uImgA, uMix, uZoom, uFlow, uGlitch, uStep, uSeed, uRamp, uScale, uCyc, uOff;
   uniform vec2 uPan;
   uniform vec4 uGx, uGy;
@@ -569,11 +607,10 @@
   }
   vec3 thermalAt(vec2 px, float t, float blur, float off){
     vec2 q = px/uRes.y*uScale;
-    vec2 disp = (vec2(vnoise(q*3.1 + vec2(0., t*0.21)) + 0.5*vnoise(q*6.3 + vec2(2.0, t*0.3)), vnoise(q*3.1 + vec2(4.1, -t*0.17)) + 0.5*vnoise(q*6.3 + vec2(7.0, -t*0.25)))/1.5 - 0.5)*0.035*uFlow;
+    vec2 disp = (vec2(vnoise(q*3.1 + vec2(0., t*0.21)), vnoise(q*3.1 + vec2(4.1, -t*0.17))) - 0.5)*0.035*uFlow;
     vec2 uv = imgUV(px) + disp;
-    float L = luma(texture2D(uTex, uv, 0.9 + blur).rgb);
-    float Lb = luma(texture2D(uTex, uv, 4.5 + blur).rgb);
-    float det = L + (L - Lb)*1.3;
+    vec2 lp = texture2D(uTex, uv, blur).rg;
+    float det = lp.r + (lp.r - lp.g)*1.3;
     if (uRamp > 0.5) return pal(det + 0.05*(vnoise(q*5.0 + t*0.3) - 0.5));
     float idx = det*uCyc + 0.30*(fbm3(q*2.6 + vec2(t*0.08, -t*0.05)) - 0.5) + 0.05*(vnoise(q*11. + vec2(t*0.35, t*0.2)) - 0.5)
               + uOff + off + t*0.02*uFlow;
@@ -585,7 +622,14 @@
     float g = uGlitch;
     float blur = g*2.8;
     vec3 col = thermalAt(px, t, blur, 0.);
-    if (uMix < 0.999) col = mix(texture2D(uTex, imgUV(px), 0.).rgb, col, uMix);
+    if (uMix < 0.999) {
+      // heat-up reveal instead of a muddy crossfade: bright areas and noise islands flip to thermal first
+      vec2 q = px/uRes.y*uScale;
+      vec3 ph = texture2D(uTex2, imgUV(px), 0.).rgb;
+      float f = 0.62*vnoise(q*2.4 + vec2(t*0.15, 0.)) + 0.38*(1. - luma(ph));
+      float m = smoothstep(f - 0.07, f + 0.07, uMix*1.18 - 0.09);
+      col = mix(ph, col, m);
+    }
     vec3 cream = hx(228.,222.,216.);
     if (g > 0.001) {
       float cu = gcoord(px.x, uGx), cv = gcoord(px.y, uGy);
@@ -633,7 +677,7 @@
   FX.thermalImage = (parent, w = E.W, h = E.H, o = {}) => {
     const el = E.h("div", "fxs-abs", parent);
     E.css(el, { left: (o.x || 0) + "px", top: (o.y || 0) + "px", width: w + "px", height: h + "px", overflow: "hidden" });
-    const scale = o.scale ?? 0.5;
+    const scale = o.scale ?? 0.45;
     const L = glLayer(el, w, h, scale);
     const tex = glTexture(o.src || "assets/wp/sonoma.jpg");
     const grid = FX.nodeGrid(el, w, h, Object.assign({ bg: false, fx: w / 2, fy: h / 2, cell: w * 0.118, cellY: w * 0.082, rx: 0.86, ry: 0.8 }, o.grid || {}));
@@ -653,7 +697,7 @@
           uPan: s.pan || [0, 0], uGx: gu.uGx, uGy: gu.uGy,
         };
         const k = t.toFixed(4) + JSON.stringify(u);
-        if (k !== key) { key = k; if (tex.tex) glDraw(L.ctx, L.c.width, L.c.height, FRAG_THERMAL, t, u, [tex.tex, ramp]); }
+        if (k !== key) { key = k; if (tex.lum) glDraw(L.ctx, L.c.width, L.c.height, FRAG_THERMAL, t, u, [tex.lum, ramp && ramp.tex, tex.tex]); }
         const gp = clamp(s.grid ?? 0);
         grid.el.style.display = gp > 0 ? "" : "none";
         if (gp > 0) grid.render(gp, { marks: s.marks });
@@ -674,15 +718,16 @@
     x.putImageData(id, 0, 0);
     return (grainURL = c.toDataURL());
   }
-  /* sunset(parent, w, h, { grain = .5, x, y }) → { el, render(t) } — the tokens' --sunset backdrop; render(t) just moves the grain */
+  /* sunset(parent, w, h, { grain = .5, x, y }) → { el, render(t) } — the tokens' --sunset backdrop with a faint film
+     grain that re-seeds 24×/s (moved by transform on its own layer, so the gradient is never repainted) */
   FX.sunset = (parent, w = E.W, h = E.H, o = {}) => {
     const el = E.h("div", "fxs-sun", parent);
     E.css(el, { left: (o.x || 0) + "px", top: (o.y || 0) + "px", width: w + "px", height: h + "px" });
     const amt = o.grain ?? 0.5;
     let g = null;
     if (amt > 0) {
-      g = E.h("div", "fxs-sun-g", el);
-      E.css(g, { backgroundImage: `url(${grain()})`, backgroundSize: "192px 192px", opacity: (0.09 * amt).toFixed(3) });
+      g = E.h("div", "fxs-abs", el);
+      E.css(g, { width: w + 192 + "px", height: h + 192 + "px", backgroundImage: `url(${grain()})`, backgroundSize: "192px 192px", opacity: (0.09 * amt).toFixed(3), willChange: "transform" });
     }
     let last = -1;
     return {
@@ -691,15 +736,15 @@
         if (!g) return;
         const f = stepOf(t, 1 / 24);
         if (f === last) return; last = f;
-        g.style.backgroundPosition = `${Math.round(E.hash(f) * 192)}px ${Math.round(E.hash(f + 0.37) * 192)}px`;
+        g.style.transform = `translate(${-Math.round(E.hash(f) * 192)}px,${-Math.round(E.hash(f + 0.37) * 192)}px)`;
       },
     };
   };
 
   /* ================================================================ colorBars */
   const BAR_GRADS = [
-    ["#f3b2e6", "#ff9a4d"], ["#ff9a4d", "#fff1e6", "#b8e2ff"], ["#d5c2ff", "#f6b3e6"], ["#ffbe8f", "#ff8f50"],
-    ["#f6b3e6", "#ffc9a3", "#ff9a4d"], ["#b8e2ff", "#fdf0f6", "#efb6ee"], ["#ff9a4d", "#f6b3e6"], ["#ffcfa8", "#fff4ec", "#cfd0ff"],
+    ["#f3b2e6", "#ff9a4d"], ["#ff9a4d", "#ffd9c0", "#a9dcff"], ["#c9b6ff", "#f6b3e6"], ["#ffbe8f", "#ff8f50"],
+    ["#f6b3e6", "#ffc9a3", "#ff9a4d"], ["#a9dcff", "#e9d6ff", "#efb0ec"], ["#ff9a4d", "#f6b3e6"], ["#ffb98c", "#ffd8c4", "#c3c4ff"],
   ];
   function mkCanvas(w, h) { const c = document.createElement("canvas"); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; }
   function fillGrad(x, w, colors) {
@@ -1105,14 +1150,14 @@
         if (k === key) return; key = k;
         x.clearRect(0, 0, w, h);
         const cx = w / 2, cy = h / 2;
-        const sp = gap * (1 - 0.3 * E.ease.inOutCubic(cd));
-        const maxR = Math.hypot(((cols - 1) / 2) * gap, ((rows - 1) / 2) * gap * 2.2);
+        const sp = gap * (1 - 0.4 * E.ease.inOutCubic(cd));
+        const maxR = Math.hypot(((cols - 1) / 2) * gap, ((rows - 1) / 2) * gap);
         for (const cl of cells) {
           const gx = (cl.i - (cols - 1) / 2), gy = (cl.j - (rows - 1) / 2);
           const px = cx + gx * sp, py = cy + gy * sp;
           // condense: outer cells go away first
-          const rr = Math.hypot(gx * gap, gy * gap * 2.2) / maxR;
-          const keep = cd <= 0 ? 1 : clamp((1 - cd * 1.25 - rr * 0.9 + 0.55) / 0.12);
+          const rr = Math.hypot(gx * gap, gy * gap * 1.15) / maxR;
+          const keep = cd <= 0 ? 1 : clamp((1 - cd * 1.25 - rr * 1.15 + 0.55) / 0.12);
           if (keep <= 0.02) continue;
           // flicker: some cells blink between icon and dot
           const fl = H2(cl.i * 1.9 + st * 0.13, cl.j * 2.3 + st * 0.71);
@@ -1193,10 +1238,10 @@
   const BENTO_LAYOUTS = [
     [["macro", 2, 0, 6, 4], ["thumb", 0, 0, 1, 1], ["chart", -1, 1, 1, 2], ["pct", 1, 1, 1, 2], ["price", 0, 3, 1, 0.55], ["code", 1, -1, 1, 1],
      ["tag", 7, 6, 3, 0.75], ["whisper", 1, 4, 1, 0.5], ["search", -1, 5, 1, 0.6], ["local", 8, 1, 1, 1], ["wpm", 8, -1, 2, 1],
-     ["text", 1, 0.65, 1, 1, "listening…"], ["text", -1, 3.6, 1, 1, "nothing uploaded"], ["text", 1, 2.65, 1, 1, "transcribing locally"]],
+     ["text", 1, 0.65, 1, 1, "listening…"], ["text", -1, 3.6, 1, 1, "nothing uploaded"], ["text", 1, 3.12, 1, 1, "transcribing locally"]],
     [["macro", 2, 0, 6, 4], ["thumb", 0, 0, 1, 1], ["chart", -1, 1, 1, 2], ["pct", 1, 1, 1, 2], ["price", 0, 3, 1, 0.55], ["code", 1, -1, 1, 1],
      ["tag", 7, 6, 3, 0.75], ["whisper", 1, 4, 1, 0.5], ["search", -1, 5, 1, 0.6], ["local", 8, 1, 1, 1], ["lat", 8, -1, 2, 1],
-     ["iri", 1, 1, 1, 1], ["text", 1, 0.65, 1, 1, "listening…"], ["text", -1, 3.6, 1, 1, "nothing uploaded"]],
+     ["iri", 0, 1, 1, 1], ["text", 1, 0.65, 1, 1, "listening…"], ["text", -1, 3.6, 1, 1, "nothing uploaded"]],
     [["macro", 3, 0, 5, 4], ["face", 0, 0, 1, 1], ["chart", -1, 1, 1, 2], ["pct", 1, 0, 2, 2], ["price", 0, 2, 1, 0.55], ["code", 2, -1, 1, 1],
      ["tag", 6, 5, 3, 0.75], ["whisper", 3, 4, 2, 0.6], ["search", -1, 4, 1, 0.6], ["seven", 8, 0, 1, 2], ["thumb", 1, 2, 1, 1],
      ["text", 0, 1.1, 1, 1, "on-device"], ["text", 3, 4.7, 1, 1, "nothing uploaded"]],
@@ -1289,7 +1334,7 @@
         for (const id in tiles) if (!used.has(id)) tiles[id].el.style.display = "none";
         grid.render(p, { marks });
         if (macro && macroBox.style.display !== "none") {
-          macro.render(t, { rot: 0.55 + t * 0.05 + (st % 3) * 0.015 });
+          macro.render(t, { rot: 0.55 + t * 0.05 + (st % 3) * 0.015, zoom: 0.84 + 0.05 * (st % 3) });
           if (thumbCv && tiles.thumb && tiles.thumb.el.style.display !== "none") {
             const k = st + "";
             if (k !== lastKey) {
@@ -1304,4 +1349,5 @@
       },
     };
   };
+  FX._dbg.frags = { wash: FRAG_WASH, thermal: FRAG_THERMAL, macro: FRAG_MACRO };
 })();
