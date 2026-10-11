@@ -468,6 +468,20 @@ def fx(cue):
         return out, 0.8
     if k == "riser2":
         return riser(0.8, 600, 9000, False) * 0.5, 0.5
+    if k == "glitch":
+        d = 0.42
+        t = tt(d)
+        r = np.random.default_rng(300 + int(v))
+        out = np.zeros(len(t))
+        for o in np.arange(0, d - 0.05, 0.035):
+            if r.random() < 0.7:
+                seg = int(r.uniform(0.012, 0.03) * SR)
+                i = int(o * SR)
+                f = r.choice([220, 440, 880, 1320, 1760])
+                sq = np.sign(np.sin(2 * np.pi * f * np.arange(seg) / SR)) * 0.35
+                nz = np.round(r.standard_normal(seg) * 3) / 3 * 0.25
+                out[i:i + seg] += (sq + nz)[: len(out) - i]
+        return filt(out, "hp", 300) * 0.8, 0.5
     if k == "type2":
         return np.zeros(10), 0
     return np.zeros(10), 0
