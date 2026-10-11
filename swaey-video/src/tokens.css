@@ -1,0 +1,115 @@
+/* v2 design tokens: the reference's editorial look + Swaey's accent, and macOS (Sonoma) UI. */
+:root {
+  /* film canvas */
+  --cream: #ede8e3;
+  --cream-2: #e8e3de;
+  --night: #1d1d1d;
+  --ink: #111111;
+  --ink-2: #3a3734;
+  --ink-mute: #a7a29d;
+  --sunset: linear-gradient(180deg, #e8e3de 0%, #e7e2dd 35%, #ece2dc 55%, #f3e1d6 70%, #f7e1d2 78%, #eadbcf 86%, #c6d1cf 94%, #b6cac9 100%);
+  /* accents (Swaey electric replaces the reference orange) */
+  --electric: #0f7fff;
+  --electric-rgb: 15, 127, 255;
+  --lavender: #a98bff;
+  --coral: #ff7a45;
+  --sky-glyph: #7fc4ff;
+  --lime: #d4ef4f;
+  --glyph: #333030;
+  --glyph-light: #c9c4bf;
+  /* iridescent palette */
+  --iri-cyan: #9fe6ff;
+  --iri-sky: #b9d8ff;
+  --iri-pink: #f6b3e6;
+  --iri-peach: #ffc9a3;
+  --iri-orange: #ff9a4d;
+  --iri-lav: #cdb8ff;
+
+  /* macOS Sonoma, light appearance */
+  --sf: "Inter", -apple-system, system-ui, sans-serif;
+  --sf-mono: "Geist Mono", ui-monospace, monospace;
+  --mac-accent: #007aff;
+  --mac-accent-dark: #0a84ff;
+  --mac-text: #1d1d1f;
+  --mac-text-2: rgba(0, 0, 0, 0.5);
+  --mac-text-3: rgba(0, 0, 0, 0.26);
+  --mac-sep: rgba(0, 0, 0, 0.1);
+  --mac-win: #ffffff;
+  --mac-side: #e9e8ea;
+  --mac-bar: #f6f6f6;
+  --mac-fill: rgba(0, 0, 0, 0.05);
+  --mac-sel: rgba(0, 0, 0, 0.09);
+  --mac-red: #ff5f57;
+  --mac-yellow: #febc2e;
+  --mac-green: #28c840;
+  --mac-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.24), 0 1px 1.5px rgba(0, 0, 0, 0.06), 0 10px 26px rgba(0, 0, 0, 0.16), 0 34px 80px rgba(0, 0, 0, 0.22);
+  /* dark appearance */
+  --mac-d-win: #1e1e1e;
+  --mac-d-side: #2a282c;
+  --mac-d-bar: #2c2c2e;
+  --mac-d-text: #f5f5f7;
+  --mac-d-text-2: rgba(255, 255, 255, 0.55);
+  --mac-d-sep: rgba(255, 255, 255, 0.1);
+  --mac-d-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.8), inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 10px 26px rgba(0, 0, 0, 0.3), 0 34px 80px rgba(0, 0, 0, 0.45);
+}
+
+.cream { background: var(--cream); }
+.night { background: var(--night); color: #fff; }
+.sunset { background: var(--sunset); }
+.cap { font: 400 52px/1.15 var(--sf); letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
+.glyph { position: absolute; font: 400 44px/1 var(--sf-mono); color: var(--glyph); white-space: pre; }
+.vcloud { position: absolute; font: 400 19px/1 var(--sf-mono); color: #3a3734; white-space: pre; }
+
+/* ---------- macOS window ---------- */
+.mw { position: absolute; border-radius: 10px; background: var(--mac-win); box-shadow: var(--mac-shadow); overflow: hidden; font-family: var(--sf); color: var(--mac-text); font-size: 13px; letter-spacing: -0.006em; -webkit-font-smoothing: antialiased; }
+.mw.dark { background: var(--mac-d-win); color: var(--mac-d-text); box-shadow: var(--mac-d-shadow); }
+.mw-side { position: absolute; left: 0; top: 0; bottom: 0; background: var(--mac-side); border-right: 0.5px solid rgba(0, 0, 0, 0.08); padding: 52px 10px 10px; }
+.mw.dark .mw-side { background: var(--mac-d-side); border-right-color: rgba(0, 0, 0, 0.5); }
+.mw-main { position: absolute; top: 0; right: 0; bottom: 0; }
+.mw-bar { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 6px; padding: 0 12px; background: var(--mac-bar); border-bottom: 0.5px solid var(--mac-sep); }
+.mw.dark .mw-bar { background: var(--mac-d-bar); border-bottom-color: rgba(0, 0, 0, 0.55); }
+.mw-bar.flat { background: transparent; border-bottom: 0; }
+.mw-title { font-size: 13px; font-weight: 600; color: #262626; letter-spacing: -0.01em; white-space: nowrap; }
+.mw-sub { font-size: 11px; font-weight: 400; color: var(--mac-text-2); white-space: nowrap; }
+.mw.dark .mw-title { color: #e6e6e6; }
+.mw-content { position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden; }
+.tls { position: absolute; left: 13px; top: 0; display: flex; gap: 8px; align-items: center; z-index: 5; }
+.tls i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.tls i:nth-child(1) { background: var(--mac-red); box-shadow: inset 0 0 0 0.5px #e0443e; }
+.tls i:nth-child(2) { background: var(--mac-yellow); box-shadow: inset 0 0 0 0.5px #dea123; }
+.tls i:nth-child(3) { background: var(--mac-green); box-shadow: inset 0 0 0 0.5px #1aab29; }
+.tls.off i { background: #d6d6d6; box-shadow: inset 0 0 0 0.5px #c2c2c2; }
+.tb-btn { height: 28px; min-width: 28px; padding: 0 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: #6e6e73; flex: none; }
+.tb-btn.on { background: rgba(0, 0, 0, 0.07); color: #3a3a3c; }
+.mw.dark .tb-btn { color: #a1a1a6; }
+.tb-seg { display: inline-flex; border-radius: 6px; background: rgba(0, 0, 0, 0.06); padding: 2px; gap: 2px; flex: none; }
+.tb-seg span { padding: 3px 10px; border-radius: 5px; font-size: 12px; font-weight: 500; color: #3a3a3c; }
+.tb-seg span.on { background: #fff; box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.2); }
+.mw.dark .tb-seg { background: rgba(255, 255, 255, 0.08); }
+.mw.dark .tb-seg span { color: #d1d1d6; }
+.mw.dark .tb-seg span.on { background: #636366; box-shadow: none; }
+.search { height: 28px; border-radius: 7px; background: rgba(0, 0, 0, 0.06); display: flex; align-items: center; gap: 6px; padding: 0 8px; color: rgba(0, 0, 0, 0.42); font-size: 13px; flex: none; }
+.mw.dark .search { background: rgba(255, 255, 255, 0.07); color: rgba(255, 255, 255, 0.4); }
+.side-h { font-size: 11px; font-weight: 600; color: rgba(0, 0, 0, 0.32); padding: 14px 10px 5px; letter-spacing: 0; }
+.mw.dark .side-h { color: rgba(255, 255, 255, 0.3); }
+.side-i { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--mac-text); white-space: nowrap; }
+.side-i.sel { background: var(--mac-sel); }
+.side-i .badge { margin-left: auto; font-size: 12px; color: rgba(0, 0, 0, 0.42); }
+.mw.dark .side-i { color: var(--mac-d-text); }
+.mw.dark .side-i.sel { background: rgba(255, 255, 255, 0.1); }
+.side-i svg { flex: none; }
+.mac-btn { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 11px; border-radius: 6px; font-size: 13px; font-weight: 500; background: #fff; color: #1d1d1f; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.15), 0 0.5px 1.5px rgba(0, 0, 0, 0.12); white-space: nowrap; }
+.mac-btn.primary { background: linear-gradient(#2a8bff, #0a6cff); color: #fff; box-shadow: 0 0 0 0.5px rgba(0, 70, 200, 0.6), inset 0 0.5px 0 rgba(255, 255, 255, 0.3); }
+.avatar { border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; flex: none; letter-spacing: 0; }
+
+/* ---------- desktop ---------- */
+.desk { position: absolute; overflow: hidden; background: #2b3f8f center / cover no-repeat; }
+.menubar { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font: 500 13px/1 var(--sf); color: #fff; letter-spacing: -0.01em; text-shadow: 0 0 6px rgba(0, 0, 0, 0.15); z-index: 30; }
+.menubar.light { color: #1d1d1f; text-shadow: none; }
+.menubar .mb-l, .menubar .mb-r { display: flex; align-items: center; gap: 18px; white-space: nowrap; }
+.menubar .mb-app { font-weight: 700; }
+.dock { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 6px; padding: 5px 6px; border-radius: 18px; background: rgba(246, 246, 246, 0.36); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.5), 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 8px 30px rgba(0, 0, 0, 0.18); z-index: 30; }
+.dock img { display: block; }
+.dock .dock-sep { width: 1px; align-self: stretch; margin: 6px 3px; background: rgba(0, 0, 0, 0.18); }
+.dock .dock-dot { position: absolute; bottom: 1px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
+.notch { position: absolute; left: 50%; top: 0; transform: translateX(-50%); background: #000; z-index: 40; }

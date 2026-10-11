@@ -18,7 +18,8 @@
   await Promise.all([...document.images].map((im) => (im.complete ? 0 : new Promise((r) => { im.onload = im.onerror = r; }))));
   for (const f of E.ready || []) await f();
   E.cues.sort((a, b) => a.t - b.t);
-  window.__meta = { duration: K.DURATION, bpm: E.BPM, cues: E.cues };
+  const dur = K.LAB_DURATION || K.DURATION;
+  window.__meta = { duration: dur, bpm: E.BPM, cues: E.cues };
   window.__seek = (t) => E.seek(t);
   E.seek(0);
   window.__ready = true;
@@ -29,7 +30,7 @@
   const fit = () => { const s = Math.min(innerWidth / 1920, (innerHeight - 48) / 1080); stage.style.transform = `scale(${s})`; E.scale = s; };
   addEventListener("resize", fit); fit();
   const bar = E.h("input", "", document.body);
-  Object.assign(bar, { type: "range", min: 0, max: K.DURATION, step: 0.001, value: 0 });
+  Object.assign(bar, { type: "range", min: 0, max: dur, step: 0.001, value: 0 });
   E.css(bar, { position: "fixed", left: "12px", right: "12px", bottom: "12px", width: "calc(100% - 24px)" });
   const audio = new Audio("../out/soundtrack.wav");
   let playing = true, t0 = performance.now(), base = 0;
@@ -39,6 +40,6 @@
   bar.oninput = () => { base = +bar.value; t0 = performance.now(); audio.currentTime = base; };
   addEventListener("keydown", (e) => { if (e.code === "Space") { playing ? pause() : play(); e.preventDefault(); } });
   play();
-  const loop = () => { let t = now(); if (t >= K.DURATION) { base = 0; t0 = performance.now(); t = 0; audio.currentTime = 0; } E.seek(t); bar.value = t; requestAnimationFrame(loop); };
+  const loop = () => { let t = now(); if (t >= dur) { base = 0; t0 = performance.now(); t = 0; audio.currentTime = 0; } E.seek(t); bar.value = t; requestAnimationFrame(loop); };
   loop();
 })();

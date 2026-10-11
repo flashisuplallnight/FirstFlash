@@ -3,27 +3,6 @@
 (function () {
   const E = window.E, C = E.C;
   const K = (E.K = {});
-  const B = E.bar;
-
-  /* Storyboard, in bars of 128 BPM (1 bar = 1.875 s). */
-  K.T = {
-    hook: [0, 2 * B],
-    notch: [2 * B, 4 * B],
-    demo: [4 * B, 5.5 * B],
-    says: [5.5 * B, 7 * B],
-    typing: [7 * B, 8.5 * B],
-    memory: [8.5 * B, 9.5 * B],
-    asks: [9.5 * B, 10.5 * B],
-    instant: [10.5 * B, 11.5 * B],
-    skills: [11.5 * B, 13.5 * B],
-    apps: [13.5 * B, 15 * B],
-    code: [15 * B, 16.5 * B],
-    privacy: [16.5 * B, 18.5 * B],
-    montage: [18.5 * B, 20 * B],
-    hands: [20 * B, 22 * B],
-    end: [22 * B, 24.5 * B],
-  };
-  K.DURATION = 24.5 * B;
 
   /* ---------- Swaey's app icon, with a live face ---------- */
   K.appMark = (parent, size) => {

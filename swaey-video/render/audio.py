@@ -14,7 +14,7 @@ from scipy import signal
 from scipy.io import wavfile
 
 SR = 48000
-BPM = 128
+BPM = 136  # the reference film's tempo; its cuts sit on this grid
 BEAT = 60 / BPM
 BAR = BEAT * 4
 RNG = np.random.default_rng(7)
@@ -480,15 +480,17 @@ PROG_B = [  # Dm9 – Bbmaj7 – Fmaj7 – C6 (dark mode)
     ([50, 53, 57, 64], 38), ([46, 50, 53, 57], 34), ([53, 57, 60, 64], 41), ([48, 52, 55, 57], 36)]
 
 
-def section(b):
-    """energy profile per bar position"""
-    if b < 2: return "intro"
-    if b < 11: return "groove"
-    if b < 16.5: return "dark"
-    if b < 18.5: return "break"
-    if b < 20: return "drop2"
-    if b < 22: return "hands"
-    return "end"
+# v2 arrangement in seconds, following the reference film's energy curve
+SECTIONS = [(0.0, "intro"), (4.41, "groove"), (18.0, "dark"), (20.0, "break"), (28.2, "dark"),
+            (33.9, "hands"), (36.0, "drop2"), (42.0, "dark"), (44.0, "drop2"), (46.0, "end")]
+
+
+def section_t(t):
+    cur = "intro"
+    for a, name in SECTIONS:
+        if t >= a:
+            cur = name
+    return cur
 
 
 def build(meta, out_path):
@@ -502,19 +504,17 @@ def build(meta, out_path):
         if t >= dur:
             break
         bar = b16 / 16
-        sec = section(bar)
+        sec = section_t(t)
         step = b16 % 16
         beat_i = step // 4
         # ---- kick
-        four = sec in ("groove", "drop2") or (sec == "dark" and bar >= 11) or (sec == "end" and bar >= 22.5 and bar < 24)
+        four = sec in ("groove", "drop2", "dark") or (sec == "end" and t < 48.0)
         if step % 4 == 0 and four:
             drums.add(t, kick(), 0.9)
             kicks.append(t)
         if sec == "break" and step == 0:
             drums.add(t, kick(0.6, 0.7), 0.45)
             kicks.append(t)
-        if sec == "hands" and step in (0, 3) and bar >= 21:
-            drums.add(t, kick(0.5, 0.6), 0.35)
         # ---- clap / snare
         if sec in ("groove", "drop2") and step in (4, 12):
             c = clap()
@@ -525,12 +525,12 @@ def build(meta, out_path):
             drums.add(t, c, 0.6)
             send.add(t, c, 0.35)
         # ---- hats
-        if sec in ("groove", "dark", "drop2") or (sec == "end" and bar >= 22.5 and bar < 24):
+        if sec in ("groove", "dark", "drop2") or (sec == "end" and t < 48.0):
             if step % 2 == 1 or (sec == "drop2"):
                 drums.add(t, hat(dec=0.03 + (0.02 if step % 4 == 2 else 0), seed=4 + step), 0.16 if step % 4 == 2 else 0.11, pan=0.25)
             if step % 4 == 2 and sec in ("groove", "drop2"):
                 drums.add(t, hat(0.25, 0.16, 9), 0.08, pan=-0.2)
-        if sec == "intro" and bar >= 1 and step % 2 == 0:
+        if sec == "intro" and t >= 1.76 and step % 2 == 0:
             drums.add(t, hat(seed=4 + step), 0.05, pan=0.3)
         # ---- bass: rolling off-beat 8ths
         prog = PROG_B if sec in ("dark", "break") else PROG_A
@@ -538,10 +538,10 @@ def build(meta, out_path):
         if sec in ("groove", "dark", "drop2") and step % 4 == 2:
             bass.add(t, bass_note(root + 12 if sec != "dark" else root + 12, BEAT * 0.45), 0.55)
         # ---- arp (16ths)
-        if sec in ("groove", "dark", "drop2", "end") or (sec == "intro" and bar >= 1):
+        if sec in ("groove", "dark", "drop2") or (sec == "end" and t < 48.0) or (sec == "intro" and t >= 1.76):
             pat = [0, 1, 2, 3, 2, 1, 2, 3]
             m = chord[pat[step % 8]] + 12 + (12 if step % 8 == 3 else 0)
-            br = {"intro": 0.25 + 0.5 * (bar - 1), "groove": 0.7, "dark": 0.5, "drop2": 1.0, "end": 0.55}[sec]
+            br = {"intro": 0.25 + 0.2 * (t - 1.76), "groove": 0.7, "dark": 0.5, "drop2": 1.0, "end": 0.55}[sec]
             g = {"intro": 0.10, "groove": 0.14, "dark": 0.12, "drop2": 0.16, "end": 0.10}[sec]
             arp.add(t, pluck(m, 0.3, br), g * (1.0 if step % 4 == 0 else 0.75), pan=-0.35 if step % 2 else 0.35)
 
@@ -550,7 +550,7 @@ def build(meta, out_path):
         t = bi * BAR
         if t >= dur:
             break
-        sec = section(bi + 0.01)
+        sec = section_t(t + 0.01)
         prog = PROG_B if sec in ("dark", "break") else PROG_A
         chord, root = prog[bi % 4]
         bright = {"intro": 0.15, "groove": 0.55, "dark": 0.35, "break": 0.3, "drop2": 0.8, "hands": 0.45, "end": 0.5}[sec]
@@ -562,23 +562,20 @@ def build(meta, out_path):
             pads.add(t, sub_note(root, BAR), 0.16 if sec == "intro" else 0.22)
     # half-bar notches (b10.5 → b11 keep the A progression)
 
-    # ---- transitions
-    for tb, length, g in [(1, 1, 0.5), (17.5, 1, 0.6), (21.5, 0.5, 0.25)]:
-        r = riser(length * BAR)
-        fxb.add(tb * BAR, r, g)
-    for tb in [2, 4, 7, 11, 18.5, 22]:
-        drums.add(tb * BAR, crash(), 0.35)
-        send.add(tb * BAR, crash(), 0.15)
+    # ---- transitions (seconds)
+    for t0, t1, g in [(1.76, 4.41, 0.5), (26.9, 28.2, 0.3), (33.9, 36.0, 0.6)]:
+        fxb.add(t0, riser(t1 - t0), g)
+    for tc in [4.41, 18.0, 28.2, 36.0, 44.0, 46.0, 48.0]:
+        drums.add(tc, crash(), 0.33)
+        send.add(tc, crash(), 0.15)
     # snare roll into drop 2
-    roll_start = 17.5 * BAR
-    k = 0
+    roll_start, roll_end = 34.6, 36.0
     tcur = roll_start
-    while tcur < 18.5 * BAR - 0.02:
-        u = (tcur - roll_start) / BAR
+    while tcur < roll_end - 0.02:
+        u = (tcur - roll_start) / (roll_end - roll_start)
         step = BEAT / 2 if u < 0.5 else BEAT / 4 if u < 0.8 else BEAT / 8
         drums.add(tcur, snare(), 0.12 + 0.35 * u)
         tcur += step
-        k += 1
 
     # ---- sound effects from the scene cues
     for c in meta["cues"]:
@@ -615,8 +612,17 @@ def build(meta, out_path):
             wet[off:, ch] += filt(src[: n - off], "lp", 3500) * g
     music += wet * 0.5 * duck
 
+    # ---- section dynamics: the reference breathes (quiet ≈ 1/4 of the drops)
+    LV = {"intro": 0.32, "groove": 1.0, "dark": 0.58, "break": 0.3, "hands": 0.26, "drop2": 1.05, "end": 0.62}
+    g = np.array([LV[section_t(x)] for x in np.arange(0, n, 480) / SR])
+    g = np.repeat(g, 480)[:n]
+    k = int(0.12 * SR)
+    g = np.convolve(g, np.ones(k) / k, mode="same")
+    drums.x *= g[:, None]
+    music *= g[:, None]
+
     ir = make_ir()
-    send.x += pads.x * 0.3 + arp.x * 0.25
+    send.x += (pads.x * 0.3 + arp.x * 0.25) * g[:, None]
     rev = reverb(send.x, ir)
     mix = drums.x * 1.0 + music * 1.0 + fxb.x * 1.0 + rev * 0.55
     mix = filt(filt(mix.T, "hp", 34).T.T, "hp", 34).T
